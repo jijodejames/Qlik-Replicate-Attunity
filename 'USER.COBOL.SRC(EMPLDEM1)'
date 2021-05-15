@@ -1,0 +1,488 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. EMPLDEMO.
+       AUTHOR. JIJO JAMES
+       ENVIRONMENT DIVISION.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+
+        01 WS-WORK-AREA.
+           05 WS-INPUT.
+              10 WS-ISRT-KEY           PIC X(01).
+              10 WS-ISRT-COUNT         PIC 9(09).
+              10 FILLER                PIC X(01).
+              10 WS-UPDT-KEY           PIC X(02).
+              10 WS-UPDT-COUNT         PIC 9(09).
+              10 FILLER                PIC X(01).
+              10 WS-DLET-KEY           PIC X(01).
+              10 WS-DLET-COUNT         PIC 9(09).
+              10 FILLER                PIC X(01).
+              10 WS-CMMT-KEY           PIC X(01).
+              10 WS-CMMT-CNT-I         PIC 9(06).
+              10 FILLER                PIC X(01).
+              10 WS-CMMT-CNT-U         PIC 9(06).
+              10 FILLER                PIC X(01).
+              10 WS-CMMT-CNT-D         PIC 9(06).
+              10 FILLER                PIC X(01).
+              10 WS-WAIT-KEY           PIC X(01).
+              10 WS-WAIT-SECONDS       PIC 9(06).
+
+           05 WS-DISP-CODE             PIC ----9.
+           05 WS-DIV                   PIC 9(09).
+           05 WS-REM                   PIC 9(09).
+           05 WS-CNTR-I                PIC 9(09).
+           05 WS-CNTR-U                PIC 9(09).
+           05 WS-CNTR-D                PIC 9(09).
+           05 WS-RECS-INSERTD          PIC 9(09).
+           05 WS-RECS-UPDATED          PIC 9(09).
+           05 WS-RECS-DELETED          PIC 9(09).
+           05 WS-CNTR-DISP             PIC Z(08)9.
+           05 WS-EMPNO-S               PIC S9(09).
+           05 WS-LAST-REC-CNTR         PIC 9(09).
+           05 WS-NEXT-EMPL-ID          PIC 9(09).
+
+        01 WAIT-PARM.
+           05 WAIT-TIME                PIC S9(8) COMP VALUE 5.
+           05 WAIT-RESPONSE            PIC S9(8) COMP VALUE 0.
+           05 WAIT-PROGRAM-31BIT       PIC  X(8)      VALUE 'BPX1SLP '.
+
+             EXEC SQL
+              INCLUDE SQLCA
+             END-EXEC.
+
+             EXEC SQL
+              INCLUDE EMPL
+             END-EXEC.
+
+             EXEC SQL
+              INCLUDE EMPLOYEE
+             END-EXEC.
+
+       PROCEDURE DIVISION.
+
+       10000-MAIN-PARA.
+
+             PERFORM 20000-INITIALIZE.
+             PERFORM 30000-PROCESS-PARA.
+             PERFORM 40000-TERMINATE.
+             STOP RUN.
+
+       20000-INITIALIZE.
+
+             INITIALIZE DCLEMPL
+                        DCLEMPLOYEE
+                        WS-WORK-AREA.
+
+       30000-PROCESS-PARA.
+
+             ACCEPT WS-INPUT.
+             DISPLAY ' INPUT PARAMETERS : ' WS-INPUT
+             MOVE WS-WAIT-SECONDS        TO WAIT-TIME
+             DISPLAY ' TIME WAIT: ' WAIT-TIME
+             PERFORM 30010-FIND-LAST-REC-ON-TBL.
+             PERFORM 30015-ISRT-UPDT-DEL.
+
+       30010-FIND-LAST-REC-ON-TBL.
+
+             PERFORM 30011-DECLARE-CURSOR.
+             PERFORM 30022-OPEN-CURSOR.
+             PERFORM 30023-FETCH-CURSOR.
+             PERFORM 30024-CLOSE-CURSOR.
+
+       30011-DECLARE-CURSOR.
+
+             EXEC SQL
+                  DECLARE EMPTBL CURSOR FOR
+                  SELECT EMPNO
+                  FROM IBMUSER.EMPLOYEE
+                  ORDER BY EMPNO DESC
+                  FETCH FIRST 1 ROW ONLY
+             END-EXEC.
+
+       30022-OPEN-CURSOR.
+
+             EXEC SQL
+                  OPEN EMPTBL
+             END-EXEC.
+
+             MOVE SQLCODE TO WS-DISP-CODE.
+
+       30023-FETCH-CURSOR.
+
+             EXEC SQL
+                  FETCH EMPTBL INTO
+                  :DCLEMPLOYEE.EMPNO
+             END-EXEC.
+
+             MOVE SQLCODE TO WS-DISP-CODE
+
+             EVALUATE SQLCODE
+                 WHEN 0
+                      MOVE EMPNO OF DCLEMPLOYEE
+                                       TO WS-EMPNO-S
+                      MOVE WS-EMPNO-S
+                                       TO WS-LAST-REC-CNTR
+                      ADD 1            TO WS-LAST-REC-CNTR
+                                   GIVING WS-NEXT-EMPL-ID
+                      MOVE WS-LAST-REC-CNTR
+                                       TO WS-CNTR-DISP
+                      DISPLAY 'LAST ENTRY ON THE TABLE :' WS-CNTR-DISP
+                 WHEN +100
+                      DISPLAY 'EMPTY TABLE'
+                      MOVE ZERO        TO WS-LAST-REC-CNTR
+                      MOVE 1           TO WS-NEXT-EMPL-ID
+                      DISPLAY 'NEXT ENTRY ON THE TABLE :' WS-CNTR-DISP
+                 WHEN OTHER
+                      DISPLAY 'ABENDING OF INSERT '
+                              'SQLCODE = ' SQLCODE
+                      ADD 16           TO ZERO GIVING RETURN-CODE
+                      PERFORM 99999-ABEND-ROUTINE
+             END-EVALUATE.
+
+       30024-CLOSE-CURSOR.
+
+             EXEC SQL
+                  CLOSE EMPTBL
+             END-EXEC.
+
+             MOVE SQLCODE TO WS-DISP-CODE.
+
+       30015-ISRT-UPDT-DEL.
+
+             EVALUATE TRUE
+                 WHEN WS-ISRT-KEY = 'I' AND
+                      WS-ISRT-COUNT > 0
+                      PERFORM 30020-INSERT
+                      VARYING WS-CNTR-I
+                         FROM WS-NEXT-EMPL-ID BY 1
+                        UNTIL WS-CNTR-I  > WS-LAST-REC-CNTR +
+                                           WS-ISRT-COUNT
+                 WHEN WS-ISRT-KEY = 'S' OR SPACE
+                      DISPLAY '>>>> SKIPPING INSERT TRANSACTIONS <<<<'
+                 WHEN OTHER
+                      DISPLAY 'INVALID INSERT KEY (I)'
+             END-EVALUATE
+
+JJWAIT       IF WS-RECS-INSERTD > 0
+JJWAIT           PERFORM 99998-WAIT-ROUTINE
+JJWAIT       END-IF
+
+      *      >>>  UPDATE FIRST N RECORDS OF THE NEWLY INSERTED RECS <<<
+
+             EVALUATE TRUE
+                 WHEN WS-UPDT-KEY = 'S ' OR SPACES
+                      DISPLAY '>>>> SKIPPING UPDATE TRANSACTIONS <<<<'
+                 WHEN WS-UPDT-KEY = 'UN' AND
+                      WS-UPDT-COUNT > WS-RECS-INSERTD
+                      DISPLAY 'UPDATE COUNT REQUESTED IS MORE THAN'
+                              ' THE NEW RECORDS INSERTED'
+                 WHEN WS-UPDT-KEY = 'UN' AND
+                      WS-RECS-INSERTD = 0 AND
+                      WS-UPDT-COUNT > WS-RECS-INSERTD
+                      DISPLAY 'UPDATE REQUEST INVALID. NO NEW RECORDS '
+                              'ARE INSERTED. CHANGE KEY TO UO TO '
+                              'UPDATE OLD RECORDS'
+                 WHEN WS-UPDT-KEY     = 'UN' AND
+                      WS-UPDT-COUNT   > 0 AND
+                      WS-RECS-INSERTD > 0
+                      PERFORM 30030-UPDATE-RECORDS
+                      VARYING WS-CNTR-U
+                         FROM WS-NEXT-EMPL-ID BY 1
+                        UNTIL WS-CNTR-U > WS-LAST-REC-CNTR +
+                                          WS-UPDT-COUNT
+                 WHEN WS-UPDT-KEY   = 'UO' AND
+                      WS-UPDT-COUNT > WS-LAST-REC-CNTR
+                      DISPLAY 'UO - INVALID UPDATE REQUEST. COUNT '
+                              'EXCEEDS MAX AVAILABLE RECORDS IN THE '
+                              'TABLE.'
+                 WHEN WS-UPDT-COUNT  <= WS-LAST-REC-CNTR AND
+                      WS-UPDT-KEY     = 'UO'             AND
+                      WS-UPDT-COUNT   > 0
+                      PERFORM 30030-UPDATE-RECORDS
+                      VARYING WS-CNTR-U
+                         FROM 1 BY 1
+                        UNTIL WS-CNTR-U > WS-UPDT-COUNT
+                 WHEN OTHER
+                      DISPLAY 'INVALID UPDATE REQUESTED << WHEN OTHER'
+             END-EVALUATE
+
+JJWAIT       IF WS-RECS-UPDATED > 0
+JJWAIT           PERFORM 99998-WAIT-ROUTINE
+JJWAIT       END-IF
+
+      *      >>>  DELETE LAST N RECORDS <<<<<<<<
+
+             IF WS-RECS-INSERTD > 0
+                 ADD WS-RECS-INSERTD    TO WS-LAST-REC-CNTR
+             END-IF
+
+             EVALUATE TRUE
+                 WHEN WS-DLET-COUNT > WS-LAST-REC-CNTR
+                      DISPLAY 'DELETE COUNT REQUESTED IS MORE THAN '
+                              'THE CURRENT RECORD COUNT'
+                 WHEN WS-DLET-KEY = 'D' AND
+                      WS-DLET-COUNT > 0 AND
+                      WS-DLET-COUNT <= WS-LAST-REC-CNTR
+                      PERFORM 30040-DELETE
+                      VARYING WS-CNTR-D
+                         FROM WS-LAST-REC-CNTR BY -1
+                        UNTIL WS-CNTR-D <= WS-LAST-REC-CNTR -
+                                           WS-DLET-COUNT
+                 WHEN WS-DLET-KEY = 'S' OR SPACE
+                     DISPLAY '>>>> SKIPPING DELETE TRANSACTIONS <<<<'
+                 WHEN OTHER
+                     DISPLAY 'INVALID DELETE KEY (D)'
+             END-EVALUATE.
+
+       30020-INSERT.
+
+           IF WS-RECS-INSERTD = 0
+               DISPLAY '>>>>>>> STARTING RECORD INSERT NOW <<<<<<<'
+           END-IF
+
+           MOVE WS-CNTR-I              TO WS-EMPNO-S
+           MOVE WS-EMPNO-S             TO EMPNO OF DCLEMPLOYEE
+
+
+           PERFORM 30025-FETCH-EMPL-DATA.
+
+           EXEC SQL
+                INSERT INTO IBMUSER.EMPLOYEE
+                (EMPNO,
+                 TIME_TS,
+                 FIRSTNME,
+                 MIDINIT,
+                 LASTNAME,
+                 WORKDEPT,
+                 PHONENO,
+                 HIREDATE,
+                 JOB,
+                 EDLEVEL,
+                 SEX,
+                 BIRTHDATE,
+                 SALARY,
+                 BONUS,
+                 COMM)
+                 VALUES
+                 (:DCLEMPLOYEE.EMPNO,
+                   CURRENT TIMESTAMP,
+                  :DCLEMPLOYEE.FIRSTNME,
+                  :DCLEMPLOYEE.MIDINIT,
+                  :DCLEMPLOYEE.LASTNAME,
+                  :DCLEMPLOYEE.WORKDEPT,
+                  :DCLEMPLOYEE.PHONENO,
+                  :DCLEMPLOYEE.HIREDATE,
+                  :DCLEMPLOYEE.JOB,
+                  :DCLEMPLOYEE.EDLEVEL,
+                  :DCLEMPLOYEE.SEX,
+                  :DCLEMPLOYEE.BIRTHDATE,
+                  :DCLEMPLOYEE.SALARY,
+                  :DCLEMPLOYEE.BONUS,
+                  :DCLEMPLOYEE.COMM)
+           END-EXEC
+
+           IF SQLCODE = 0
+               ADD 1                   TO WS-RECS-INSERTD
+
+      *        >>> COMMIT FREQUENCY <<<
+
+               IF WS-CMMT-CNT-I > 0
+                   DIVIDE WS-RECS-INSERTD BY WS-CMMT-CNT-I
+                                       GIVING WS-DIV
+                                    REMAINDER WS-REM
+
+                   IF WS-REM = 0
+                       PERFORM COMMIT-WORK
+                       DISPLAY 'COMMIT AFTER INSERT: ' WS-RECS-INSERTD
+                               '  NTH RECORD: ' WS-CNTR-I
+JJWAIT                 PERFORM 99998-WAIT-ROUTINE
+                   END-IF
+               END-IF
+           ELSE
+               MOVE SQLCODE TO WS-DISP-CODE
+               DISPLAY 'ABENDING OF INSERT SQLCODE = '
+               DISPLAY  WS-DISP-CODE
+               ADD 16                  TO ZERO GIVING RETURN-CODE
+               PERFORM 99999-ABEND-ROUTINE
+           END-IF.
+
+       30025-FETCH-EMPL-DATA.
+
+           EXEC SQL
+                SELECT INT(RAND()*42)
+                  INTO :DCLEMPL.EMPNO
+                  FROM SYSIBM.SYSDUMMY1
+           END-EXEC
+
+           IF EMPNO OF DCLEMPL = ZERO
+              ADD 1                    TO EMPNO OF DCLEMPL
+           END-IF
+
+           EXEC SQL
+                SELECT
+                 FIRSTNME,
+                 MIDINIT,
+                 LASTNAME,
+                 WORKDEPT,
+                 PHONENO,
+                 HIREDATE,
+                 JOB,
+                 EDLEVEL,
+                 SEX,
+                 BIRTHDATE,
+                 SALARY,
+                 BONUS,
+                 COMM
+                 INTO
+                 :DCLEMPL.FIRSTNME,
+                 :DCLEMPL.MIDINIT,
+                 :DCLEMPL.LASTNAME,
+                 :DCLEMPL.WORKDEPT,
+                 :DCLEMPL.PHONENO,
+                 :DCLEMPL.HIREDATE,
+                 :DCLEMPL.JOB,
+                 :DCLEMPL.EDLEVEL,
+                 :DCLEMPL.SEX,
+                 :DCLEMPL.BIRTHDATE,
+                 :DCLEMPL.SALARY,
+                 :DCLEMPL.BONUS,
+                 :DCLEMPL.COMM
+                 FROM DSN81110.EMPL WHERE
+                 EMPNO = :DCLEMPL.EMPNO
+           END-EXEC
+
+           IF SQLCODE = 0
+               MOVE FIRSTNME OF DCLEMPL
+                                       TO FIRSTNME OF DCLEMPLOYEE
+               MOVE MIDINIT OF DCLEMPL TO MIDINIT OF DCLEMPLOYEE
+               MOVE LASTNAME OF DCLEMPL
+                                       TO LASTNAME OF DCLEMPLOYEE
+               MOVE WORKDEPT OF DCLEMPL
+                                       TO WORKDEPT OF DCLEMPLOYEE
+               MOVE PHONENO OF DCLEMPL TO PHONENO OF DCLEMPLOYEE
+               MOVE HIREDATE OF DCLEMPL
+                                       TO HIREDATE OF DCLEMPLOYEE
+               MOVE JOB     OF DCLEMPL TO JOB     OF DCLEMPLOYEE
+               MOVE EDLEVEL OF DCLEMPL TO EDLEVEL OF DCLEMPLOYEE
+               MOVE SEX     OF DCLEMPL TO SEX     OF DCLEMPLOYEE
+               MOVE BIRTHDATE OF DCLEMPL
+                                       TO BIRTHDATE OF DCLEMPLOYEE
+               MOVE SALARY  OF DCLEMPL TO SALARY  OF DCLEMPLOYEE
+               MOVE BONUS   OF DCLEMPL TO BONUS   OF DCLEMPLOYEE
+               MOVE COMM    OF DCLEMPL TO COMM    OF DCLEMPLOYEE
+           ELSE
+               DISPLAY 'ABENDING OF SELECT '
+                       'SQLCODE = ' SQLCODE
+               ADD 16                  TO ZERO GIVING RETURN-CODE
+               PERFORM 99999-ABEND-ROUTINE
+           END-IF.
+
+       30030-UPDATE-RECORDS.
+
+           IF WS-RECS-UPDATED = 0
+               DISPLAY '>>>>>>> STARTING RECORD UPDATE NOW <<<<<<<'
+           END-IF
+
+           MOVE WS-CNTR-U              TO WS-EMPNO-S
+           MOVE WS-EMPNO-S             TO EMPNO OF DCLEMPLOYEE
+
+           MOVE 5000.50                TO COMM OF DCLEMPLOYEE
+
+           EXEC SQL
+                UPDATE IBMUSER.EMPLOYEE
+                SET TIME_TS = CURRENT TIMESTAMP + 1 HOUR,
+                    COMM    = :DCLEMPLOYEE.COMM
+                WHERE EMPNO = :DCLEMPLOYEE.EMPNO
+           END-EXEC
+
+           IF SQLCODE = 0
+               ADD 1                   TO WS-RECS-UPDATED
+
+      *        >>> COMMIT FREQUENCY <<<
+
+               IF WS-CMMT-CNT-U > 0
+                   DIVIDE WS-RECS-UPDATED  BY WS-CMMT-CNT-U
+                                       GIVING WS-DIV
+                                    REMAINDER WS-REM
+
+                   IF WS-REM = 0
+                       PERFORM COMMIT-WORK
+                       DISPLAY 'COMMIT AFTER UPDATE: ' WS-RECS-UPDATED
+                               '  NTH RECORD: ' WS-CNTR-U
+JJWAIT                 PERFORM 99998-WAIT-ROUTINE
+                   END-IF
+               END-IF
+           ELSE
+               MOVE SQLCODE            TO WS-DISP-CODE
+               DISPLAY 'ABENDING OF UPDATE '
+                       'SQLCODE = ' WS-DISP-CODE
+               ADD 16                  TO ZERO GIVING RETURN-CODE
+               PERFORM 99999-ABEND-ROUTINE
+           END-IF.
+
+       30040-DELETE.
+
+           IF WS-RECS-DELETED = 0
+               DISPLAY '>>>>>>> STARTING RECORD DELETE NOW <<<<<<<'
+           END-IF
+
+           MOVE WS-CNTR-D              TO WS-EMPNO-S
+           MOVE WS-EMPNO-S             TO EMPNO OF DCLEMPLOYEE
+
+           EXEC SQL
+                DELETE FROM IBMUSER.EMPLOYEE
+                WHERE EMPNO = :DCLEMPLOYEE.EMPNO
+           END-EXEC
+
+           IF SQLCODE = 0
+               MOVE EMPNO OF DCLEMPLOYEE
+                                       TO WS-EMPNO-S
+               MOVE WS-EMPNO-S         TO WS-CNTR-D
+               ADD 1                   TO WS-RECS-DELETED
+
+      *        >>> COMMIT FREQUENCY <<<
+
+               IF WS-CMMT-CNT-D > 0
+                   DIVIDE WS-RECS-DELETED
+                                       BY WS-CMMT-CNT-D
+                                   GIVING WS-DIV
+                                REMAINDER WS-REM
+                   IF WS-REM = 0
+                       PERFORM COMMIT-WORK
+                       DISPLAY 'COMMIT AFTER DELETE: ' WS-RECS-DELETED
+                               '  NTH RECORD :' WS-CNTR-D
+                   END-IF
+               END-IF
+           ELSE
+               DISPLAY 'ABENDING OF DELETE '
+                       'SQLCODE = ' SQLCODE
+               ADD 16                  TO ZERO GIVING RETURN-CODE
+               PERFORM 99999-ABEND-ROUTINE
+           END-IF.
+
+      *****************************************************************
+      * COMMIT ANY CHANGES                                            *
+      *****************************************************************
+       COMMIT-WORK.
+           EXEC SQL
+              COMMIT
+           END-EXEC.
+
+       99998-WAIT-ROUTINE.
+              DISPLAY 'START CALLING WAIT PROGRAM'.
+              CALL WAIT-PROGRAM-31BIT USING WAIT-TIME WAIT-RESPONSE.
+              DISPLAY 'END   CALLING WAIT PROGRAM'.
+
+       99999-ABEND-ROUTINE.
+             PERFORM 40000-TERMINATE.
+
+       40000-TERMINATE.
+
+             DISPLAY ' >>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<'
+             DISPLAY ' >>>>>>>>>>> JOB STATISTICS <<<<<<<<<<'
+             MOVE WS-RECS-INSERTD      TO WS-CNTR-DISP
+             DISPLAY ' INSERTED ' WS-CNTR-DISP ' RECORDS'
+             MOVE WS-RECS-UPDATED      TO WS-CNTR-DISP
+             DISPLAY '  UPDATED ' WS-CNTR-DISP ' RECORDS'
+             MOVE WS-RECS-DELETED      TO WS-CNTR-DISP
+             DISPLAY '  DELETED ' WS-CNTR-DISP ' RECORDS'.
+             STOP RUN.
